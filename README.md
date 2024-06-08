@@ -1,2 +1,2 @@
 # Alaska
-Experimental Distributed Proxy Services to Circumvent Traffic Characteristic Analysis
+Experimental Distributed Proxy Service to Circumvent Traffic Characteristic Analysis
