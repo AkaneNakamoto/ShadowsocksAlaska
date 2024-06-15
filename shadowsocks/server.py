@@ -23,7 +23,12 @@ import os
 import logging
 import signal
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../'))
+if __name__ == '__main__':
+    import inspect
+    file_path = os.path.dirname(os.path.realpath(inspect.getfile(inspect.currentframe())))
+    os.chdir(file_path)
+    sys.path.insert(0, os.path.join(file_path, '../'))
+
 from shadowsocks import shell, daemon, eventloop, tcprelay, udprelay, \
     asyncdns, manager
 
@@ -49,6 +54,9 @@ def main():
         else:
             config['port_password'][str(server_port)] = config['password']
 
+    if not config.get('dns_ipv6', False):
+        asyncdns.IPV6_CONNECTION_SUPPORT = False
+
     if config.get('manager_address', 0):
         logging.info('entering manager mode')
         manager.run(config)
@@ -59,14 +67,57 @@ def main():
     dns_resolver = asyncdns.DNSResolver()
     port_password = config['port_password']
     del config['port_password']
-    for port, password in port_password.items():
+    for port, password_obfs in port_password.items():
+        protocol = config.get("protocol", 'origin')
+        obfs_param = config.get("obfs_param", '')
+        if type(password_obfs) == list:
+            password = password_obfs[0]
+            obfs = password_obfs[1]
+        elif type(password_obfs) == dict:
+            password = password_obfs.get('password', 'm')
+            protocol = password_obfs.get('protocol', 'origin')
+            obfs = password_obfs.get('obfs', 'plain')
+            obfs_param = password_obfs.get('obfs_param', '')
+        else:
+            password = password_obfs
+            obfs = config["obfs"]
         a_config = config.copy()
-        a_config['server_port'] = int(port)
-        a_config['password'] = password
-        logging.info("starting server at %s:%d" %
-                     (a_config['server'], int(port)))
-        tcp_servers.append(tcprelay.TCPRelay(a_config, dns_resolver, False))
-        udp_servers.append(udprelay.UDPRelay(a_config, dns_resolver, False))
+        ipv6_ok = False
+        logging.info("server start with protocol[%s] password [%s] method [%s] obfs [%s] obfs_param [%s]" %
+                (protocol, password, a_config['method'], obfs, obfs_param))
+        if 'server_ipv6' in a_config:
+            try:
+                if len(a_config['server_ipv6']) > 2 and a_config['server_ipv6'][0] == "[" and a_config['server_ipv6'][-1] == "]":
+                    a_config['server_ipv6'] = a_config['server_ipv6'][1:-1]
+                a_config['server_port'] = int(port)
+                a_config['password'] = password
+                a_config['protocol'] = protocol
+                a_config['obfs'] = obfs
+                a_config['obfs_param'] = obfs_param
+                a_config['server'] = a_config['server_ipv6']
+                logging.info("starting server at [%s]:%d" %
+                             (a_config['server'], int(port)))
+                tcp_servers.append(tcprelay.TCPRelay(a_config, dns_resolver, False))
+                udp_servers.append(udprelay.UDPRelay(a_config, dns_resolver, False))
+                if a_config['server_ipv6'] == b"::":
+                    ipv6_ok = True
+            except Exception as e:
+                shell.print_exception(e)
+
+        try:
+            a_config = config.copy()
+            a_config['server_port'] = int(port)
+            a_config['password'] = password
+            a_config['protocol'] = protocol
+            a_config['obfs'] = obfs
+            a_config['obfs_param'] = obfs_param
+            logging.info("starting server at %s:%d" %
+                         (a_config['server'], int(port)))
+            tcp_servers.append(tcprelay.TCPRelay(a_config, dns_resolver, False))
+            udp_servers.append(udprelay.UDPRelay(a_config, dns_resolver, False))
+        except Exception as e:
+            if not ipv6_ok:
+                shell.print_exception(e)
 
     def run_server():
         def child_handler(signum, _):

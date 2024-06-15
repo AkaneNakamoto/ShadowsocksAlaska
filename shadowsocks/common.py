@@ -21,7 +21,7 @@ from __future__ import absolute_import, division, print_function, \
 import socket
 import struct
 import logging
-
+import binascii
 
 def compat_ord(s):
     if type(s) == int:
@@ -54,6 +54,16 @@ def to_str(s):
             return s.decode('utf-8')
     return s
 
+def int32(x):
+    if x > 0xFFFFFFFF or x < 0:
+        x &= 0xFFFFFFFF
+    if x > 0x7FFFFFFF:
+        x = int(0x100000000 - x)
+        if x < 0x80000000:
+            return -x
+        else:
+            return -2147483648
+    return x
 
 def inet_ntop(family, ipstr):
     if family == socket.AF_INET:
@@ -138,12 +148,52 @@ def pack_addr(address):
         address = address[:255]  # TODO
     return b'\x03' + chr(len(address)) + address
 
+def pre_parse_header(data):
+    datatype = ord(data[0])
+    if datatype == 0x80:
+        if len(data) <= 2:
+            return None
+        rand_data_size = ord(data[1])
+        if rand_data_size + 2 >= len(data):
+            logging.warn('header too short, maybe wrong password or '
+                         'encryption method')
+            return None
+        data = data[rand_data_size + 2:]
+    elif datatype == 0x81:
+        data = data[1:]
+    elif datatype == 0x82:
+        if len(data) <= 3:
+            return None
+        rand_data_size = struct.unpack('>H', data[1:3])[0]
+        if rand_data_size + 3 >= len(data):
+            logging.warn('header too short, maybe wrong password or '
+                         'encryption method')
+            return None
+        data = data[rand_data_size + 3:]
+    elif datatype == 0x88 or (~datatype & 0xff) == 0x88:
+        if len(data) <= 7 + 7:
+            return None
+        data_size = struct.unpack('>H', data[1:3])[0]
+        ogn_data = data
+        data = data[:data_size]
+        crc = binascii.crc32(data) & 0xffffffff
+        if crc != 0xffffffff:
+            logging.warn('uncorrect CRC32, maybe wrong password or '
+                         'encryption method')
+            return None
+        start_pos = 3 + ord(data[3])
+        data = data[start_pos:-4]
+        if data_size < len(ogn_data):
+            data += ogn_data[data_size:]
+    return data
 
 def parse_header(data):
     addrtype = ord(data[0])
     dest_addr = None
     dest_port = None
     header_length = 0
+    connecttype = (addrtype & 0x10) and 1 or 0
+    addrtype &= ~0x10
     if addrtype == ADDRTYPE_IPV4:
         if len(data) >= 7:
             dest_addr = socket.inet_ntoa(data[1:5])
@@ -175,7 +225,7 @@ def parse_header(data):
                      'encryption method' % addrtype)
     if dest_addr is None:
         return None
-    return addrtype, to_bytes(dest_addr), dest_port, header_length
+    return connecttype, to_bytes(dest_addr), dest_port, header_length
 
 
 class IPNetwork(object):
