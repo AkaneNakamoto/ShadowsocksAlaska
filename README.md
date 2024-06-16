@@ -1,7 +1,7 @@
 # Alaska
-Experimental Proxy Methods to Circumvent Traffic Characteristic Analysis.
+Experimental proxy methods to circumvent traffic characteristic analysis with information theory measures.
 
-We use the original ShadowsocksR as baseline.
+We use the original ShadowsocksR as baseline from @clowwindy and @breakwa11.
 
 Ref
 1. [How the Great Firewall of China Detects and Blocks Fully Encrypted Traffic](https://gfw.report/publications/usenixsecurity23/en/)
