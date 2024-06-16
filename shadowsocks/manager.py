@@ -218,7 +218,10 @@ def test():
             'manager_address': '127.0.0.1:6001',
             'timeout': 60,
             'fast_open': False,
-            'verbose': 2
+            'verbose': 2,
+            'protocol': 'origin',
+            'obfs': 'plain',
+            'obfs_param': ''
         }
         manager = Manager(config)
         enc.append(manager)
