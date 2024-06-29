@@ -27,15 +27,23 @@ import base64
 import datetime
 import random
 
+import secrets
+import numpy as np
+
 from shadowsocks import common
-from shadowsocks.obfsplugin import plain, verify_simple
+from shadowsocks.obfsplugin import plain
 from shadowsocks.common import to_bytes, to_str, ord
 
 
 LOWBOUND = 3.4
 HIGHBOUND = 4.6
 
-MAXPADDINGBYTES = 128
+SD = 0.35
+MINR = 1
+MAXPADDINGBYTES = 255
+
+
+ascii_popcount_dict = {1: [b' ', b'@'], 2: [b'!', b'"', b'$', b'(', b'0', b'A', b'B', b'D', b'H', b'P', b'`'], 3: [b'#', b'%', b'&', b')', b'*', b',', b'1', b'2', b'4', b'8', b'C', b'E', b'F', b'I', b'J', b'L', b'Q', b'R', b'T', b'X', b'a', b'b', b'd', b'h', b'p'], 4: [b"'", b'+', b'-', b'.', b'3', b'5', b'6', b'9', b':', b'<', b'G', b'K', b'M', b'N', b'S', b'U', b'V', b'Y', b'Z', b'\\', b'c', b'e', b'f', b'i', b'j', b'l', b'q', b'r', b't', b'x'], 5: [b'/', b'7', b';', b'=', b'>', b'O', b'W', b'[', b']', b'^', b'g', b'k', b'm', b'n', b's', b'u', b'v', b'y', b'z', b'|'], 6: [b'?', b'_', b'o', b'w', b'{', b'}', b'~']}
 
 
 class erb_simple(plain.plain):
@@ -43,29 +51,69 @@ class erb_simple(plain.plain):
     def __init__(self, method):
         super().__init__(method)
 
+
+    def simple_sample(self, xn, x):
+
+        bit_array = np.zeros(x*8, dtype=int)
+        indices = np.random.choice(x*8, xn, replace=False)
+        bit_array[indices] = 1
+        byte_string = np.packbits(bit_array).tobytes()
+
+        return byte_string
+
     def client_encode(self, buf):
-        count = sum((byte.bit_count() for byte in buf))
-        return super().client_encode(buf)
+        n = sum((byte.bit_count() for byte in buf)) 
+        l = len(buf)
+        entropy = n / l
+
+        if(entropy < LOWBOUND or entropy > HIGHBOUND):
+            return b'\x00' +  buf
+        
+        t = max( LOWBOUND - abs(np.random.normal(loc=0, scale=SD)), MINR)
+
+        delta = int((1 + n - t * l) / t )
+        
+        if (delta > MAXPADDINGBYTES):
+            print("above max padding", delta)
+            return b'\x00' +  buf
+        
+        x = random.randint(delta, MAXPADDINGBYTES)
+
+        xn = int(t * l - n + t * x)
+
+        sampled = self.simple_sample(xn, x)
+
+        return bytes([x]) + sampled + buf
     
     def client_decode(self, buf):
-        return super().client_decode(buf)
+
+        return buf[1 + buf[0]:]
     
     def server_encode(self, buf):
-        return super().server_encode(buf)
+        return self.client_encode(buf)
     
     def server_decode(self, buf):
-        return super().server_decode(buf)
+        return self.client_decode(buf)
     
-
-
-
-
-class erb_w_auth(verify_simple, erb_simple):
-
-    def __init__(self, method):
-        super().__init__(method)
 
     
 
 if __name__ == "__main__":
+    random_bytes = secrets.token_bytes(128)
+
+    n = sum(byte.bit_count() for byte in random_bytes)
+    print("init p count: ", n / len(random_bytes))
+
     model = erb_simple("")
+    
+    enc = model.client_encode(random_bytes)
+
+    n = sum(byte.bit_count() for byte in enc)
+    print("enc p count: ", n / len(enc) )
+
+    assert random_bytes == model.server_decode(enc)
+
+    print("test pass")
+
+
+
