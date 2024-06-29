@@ -102,13 +102,13 @@ class erb_simple(plain.plain):
     
     def client_decode(self, buf):
 
-        return buf[1 + buf[0]:]
+        return buf[1 + buf[0]:], False
     
     def server_encode(self, buf):
         return self.client_encode(buf)
     
     def server_decode(self, buf):
-        return self.client_decode(buf)
+        return buf[1 + buf[0]:], True, False
     
 
     
@@ -129,9 +129,11 @@ if __name__ == "__main__":
     n = sum(byte.bit_count() for byte in enc)
     print("obfs entropy: ", n / len(enc) )
 
-    assert random_bytes == model.server_decode(enc)
+    assert random_bytes == model.server_decode(enc)[0]
 
     print("decoding test pass")
 
+    print("full printable rate: ", sum(1 for byte in enc if 0x20 <= byte <= 0x7E) / len(enc))
+    print("obfs printable rate: ", sum(1 for byte in enc[:enc[0]+1] if 0x20 <= byte <= 0x7E) / len(enc[:enc[0]+1]))
 
 

@@ -220,7 +220,7 @@ def test():
             'fast_open': False,
             'verbose': 2,
             'protocol': 'origin',
-            'obfs': 'plain',
+            'obfs': 'erb_simple',
             'obfs_param': ''
         }
         manager = Manager(config)
