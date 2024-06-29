@@ -34,6 +34,14 @@ from shadowsocks import common
 from shadowsocks.obfsplugin import plain
 from shadowsocks.common import to_bytes, to_str, ord
 
+def create_erb_obfs(method):
+    return erb_simple(method)
+
+obfs_map = {
+        'erb_simple': (create_erb_obfs,),
+}
+
+
 
 LOWBOUND = 3.4
 HIGHBOUND = 4.6
