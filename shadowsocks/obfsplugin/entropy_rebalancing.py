@@ -50,6 +50,12 @@ SD = 0.35
 MINR = 1
 MAXPADDINGBYTES = 255
 
+DEBUG = 0
+
+def pprint(*argc, **argv):
+    if DEBUG:
+        return print(*argc, **argv)
+
 
 ascii_popcount_dict = {1: [b' ', b'@'], 2: [b'!', b'"', b'$', b'(', b'0', b'A', b'B', b'D', b'H', b'P', b'`'], 3: [b'#', b'%', b'&', b')', b'*', b',', b'1', b'2', b'4', b'8', b'C', b'E', b'F', b'I', b'J', b'L', b'Q', b'R', b'T', b'X', b'a', b'b', b'd', b'h', b'p'], 4: [b"'", b'+', b'-', b'.', b'3', b'5', b'6', b'9', b':', b'<', b'G', b'K', b'M', b'N', b'S', b'U', b'V', b'Y', b'Z', b'\\', b'c', b'e', b'f', b'i', b'j', b'l', b'q', b'r', b't', b'x'], 5: [b'/', b'7', b';', b'=', b'>', b'O', b'W', b'[', b']', b'^', b'g', b'k', b'm', b'n', b's', b'u', b'v', b'y', b'z', b'|'], 6: [b'?', b'_', b'o', b'w', b'{', b'}', b'~']}
 
@@ -78,11 +84,12 @@ class erb_simple(plain.plain):
             return b'\x00' +  buf
         
         t = max( LOWBOUND - abs(np.random.normal(loc=0, scale=SD)), MINR)
+        pprint("target entropy: ",  t)
 
         delta = int((1 + n - t * l) / t )
         
         if (delta > MAXPADDINGBYTES):
-            print("above max padding", delta)
+            pprint("above max padding", delta)
             return b'\x00' +  buf
         
         x = random.randint(delta, MAXPADDINGBYTES)
@@ -107,21 +114,24 @@ class erb_simple(plain.plain):
     
 
 if __name__ == "__main__":
+
+    DEBUG = 1
+
     random_bytes = secrets.token_bytes(128)
 
     n = sum(byte.bit_count() for byte in random_bytes)
-    print("init p count: ", n / len(random_bytes))
+    print("init entropy: ", n / len(random_bytes))
 
     model = erb_simple("")
     
     enc = model.client_encode(random_bytes)
 
     n = sum(byte.bit_count() for byte in enc)
-    print("enc p count: ", n / len(enc) )
+    print("obfs entropy: ", n / len(enc) )
 
     assert random_bytes == model.server_decode(enc)
 
-    print("test pass")
+    print("decoding test pass")
 
 
 
