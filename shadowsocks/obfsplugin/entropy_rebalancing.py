@@ -14,6 +14,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+#export PYTHONPATH="~/Alaska/shadowsocks:$PYTHONPATH"
 from __future__ import absolute_import, division, print_function, \
     with_statement
 
@@ -48,7 +49,12 @@ HIGHBOUND = 4.6
 
 SD = 0.35
 MINR = 1
-MAXPADDINGBYTES = 255
+
+
+MAXPADDINGBYTES = 2
+SHIFT = 6
+
+MAXPADDING = (2 ** (MAXPADDINGBYTES*8) - 1) >> SHIFT
 
 DEBUG = 0
 
@@ -73,7 +79,15 @@ class erb_simple(plain.plain):
         bit_array[indices] = 1
         byte_string = np.packbits(bit_array).tobytes()
 
-        return byte_string
+        res = b''
+        for byte in byte_string:
+            c = byte.bit_count()
+            if c in [0, 7, 8]:
+                res += bytes([byte]) 
+            else:
+                res += random.choice(ascii_popcount_dict[c])
+
+        return res
 
     def client_encode(self, buf):
         n = sum((byte.bit_count() for byte in buf)) 
@@ -81,34 +95,34 @@ class erb_simple(plain.plain):
         entropy = n / l
 
         if(entropy < LOWBOUND or entropy > HIGHBOUND):
-            return b'\x00' +  buf
+            return b'\x00'*MAXPADDINGBYTES +  buf
         
         t = max( LOWBOUND - abs(np.random.normal(loc=0, scale=SD)), MINR)
         pprint("target entropy: ",  t)
 
         delta = int((1 + n - t * l) / t )
         
-        if (delta > MAXPADDINGBYTES):
+        if (delta > MAXPADDING):
             pprint("above max padding", delta)
-            return b'\x00' +  buf
+            return b'\x00'*MAXPADDINGBYTES +  buf
         
-        x = random.randint(delta, MAXPADDINGBYTES)
+        x = random.randint(delta, MAXPADDING)
 
         xn = int(t * l - n + t * x)
 
         sampled = self.simple_sample(xn, x)
 
-        return bytes([x]) + sampled + buf
+        return x.to_bytes(MAXPADDINGBYTES, 'little') + sampled + buf
     
     def client_decode(self, buf):
 
-        return buf[1 + buf[0]:], False
+        return (buf[MAXPADDINGBYTES + int.from_bytes(buf[:MAXPADDINGBYTES], 'little') :], False)
     
     def server_encode(self, buf):
         return self.client_encode(buf)
     
     def server_decode(self, buf):
-        return buf[1 + buf[0]:], True, False
+        return (buf[MAXPADDINGBYTES + int.from_bytes(buf[:MAXPADDINGBYTES], 'little') :], True, False)
     
 
     
@@ -117,7 +131,7 @@ if __name__ == "__main__":
 
     DEBUG = 1
 
-    random_bytes = secrets.token_bytes(128)
+    random_bytes = secrets.token_bytes(1280)
 
     n = sum(byte.bit_count() for byte in random_bytes)
     print("init entropy: ", n / len(random_bytes))
@@ -129,11 +143,19 @@ if __name__ == "__main__":
     n = sum(byte.bit_count() for byte in enc)
     print("obfs entropy: ", n / len(enc) )
 
-    assert random_bytes == model.server_decode(enc)[0]
+    dec = model.server_decode(enc)[0]
+    assert random_bytes == dec
 
     print("decoding test pass")
 
+    print("data rate: ", len(random_bytes) / len(enc))
+
     print("full printable rate: ", sum(1 for byte in enc if 0x20 <= byte <= 0x7E) / len(enc))
-    print("obfs printable rate: ", sum(1 for byte in enc[:enc[0]+1] if 0x20 <= byte <= 0x7E) / len(enc[:enc[0]+1]))
+
+    ll = MAXPADDINGBYTES + int.from_bytes(enc[:MAXPADDINGBYTES], 'little') 
+    print("obfs printable rate: ", sum(1 for byte in enc[:ll] if 0x20 <= byte <= 0x7E) / len(enc[:ll]))
+
+    print(random_bytes[:32])
+    print(dec[:32])
 
 
